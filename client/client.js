@@ -98,8 +98,8 @@ window.__ModuleLoader__.load({ id: '@deepseek-ai/dsh-ide-context', factory: func
 
   var STYLE = {
     base: {
-      display: 'inline-flex', alignItems: 'center', gap: '4px', maxWidth: '260px', height: '24px',
-      padding: '0 8px', borderRadius: '12px', border: '1px solid', fontSize: '12px', lineHeight: '22px',
+      display: 'inline-flex', alignItems: 'center', gap: '3px', maxWidth: '200px', height: '18px',
+      padding: '0 4px', borderRadius: '5px', border: '0.5px solid', fontSize: '11px', lineHeight: '17px',
       whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'pointer',
       background: 'transparent', fontFamily: 'inherit', flexShrink: 1, minWidth: 0
     },
