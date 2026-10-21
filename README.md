@@ -94,3 +94,22 @@ The implementation is split into focused modules under `src/`:
 - `src/format.ts` — snapshot rendering behind a `SelectionRenderStrategy`.
 - `src/invariant.ts` — the package-owned invariant companion (registered as `@deepseek-ai/dsh-ide-context/invariant`).
 - `tests/ide-context.spec.ts` — unit tests ported from the DeepSeek Harness repository's `packages/context/ide-context/`.
+
+## Composer chip (maye-fixes fork)
+
+The web client adds a small chip to the composer footer (`conversation.input.left` seat) showing what the
+next turn will carry, worded like Claude Code's indicator:
+
+| Chip | Meaning |
+| --- | --- |
+| `3 lines selected` (blue) | This selection will be included with your next message. Hover: `file.md:17-19` and the full path. |
+| `3 lines selected` (grey) | Same selection was already sent in this session; it is re-sent only after it changes. |
+| *(hidden)* | IDE connected, nothing selected. |
+| `IDE not connected` | No lock file / socket for this session's folder. |
+| `IDE context off` (red) | Switched off for this session; nothing is injected. Click to turn it back on. |
+
+Click the chip to switch IDE context off/on for the current session (stored in
+`~/.dsh/ide-context/sessions.json`). The browser polls `GET /ide-context/api/state?session=<id>` every 1.5 s;
+the route reads the plugin's single server-side IDE connection (it never opens a second one, since the
+Claude Code bridge allows one client per window). Line count follows Claude Code: a selection ending at
+column 0 of a line does not count that line. Selected text sent to the model is capped at 8000 characters.

@@ -134,6 +134,25 @@ export class IdeBridge {
     this.readyWaiters.clear()
   }
 
+  /**
+   * Connection facts for the composer chip: whether a lock was selected for the
+   * followed workspace and whether the single IDE socket is open. Read-only; it
+   * never opens a connection of its own.
+   */
+  status(): { lockFound: boolean; connected: boolean; ideName: string | undefined; workspaceFolders: string[] } {
+    return {
+      lockFound: this.lockPath !== undefined,
+      connected: this.ws?.isOpen() === true,
+      ideName: this.snapshot.ideName,
+      workspaceFolders: [...this.selectedFolders],
+    }
+  }
+
+  /** The working directory the bridge currently follows. */
+  followedWorkspace(): string | undefined {
+    return this.cwd
+  }
+
   // -------------------------------------------------------------------------
   // Workspace selection
   // -------------------------------------------------------------------------

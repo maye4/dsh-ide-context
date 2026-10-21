@@ -1,4 +1,6 @@
 // src/index.ts
+import { homedir as homedir2 } from "node:os";
+import { join as join3 } from "node:path";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 
 // src/constants.ts
@@ -511,6 +513,23 @@ var IdeBridge = class {
     for (const waiter of this.readyWaiters) waiter();
     this.readyWaiters.clear();
   }
+  /**
+   * Connection facts for the composer chip: whether a lock was selected for the
+   * followed workspace and whether the single IDE socket is open. Read-only; it
+   * never opens a connection of its own.
+   */
+  status() {
+    return {
+      lockFound: this.lockPath !== void 0,
+      connected: this.ws?.isOpen() === true,
+      ideName: this.snapshot.ideName,
+      workspaceFolders: [...this.selectedFolders]
+    };
+  }
+  /** The working directory the bridge currently follows. */
+  followedWorkspace() {
+    return this.cwd;
+  }
   // -------------------------------------------------------------------------
   // Workspace selection
   // -------------------------------------------------------------------------
@@ -770,9 +789,178 @@ function renderReading(snapshot, turn, strategy) {
 ${renderState(snapshot, strategy)}`;
 }
 
+// src/toggles.ts
+import { mkdirSync, readFileSync as readFileSync3, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+var MAX_REMEMBERED_SESSIONS = 500;
+var SessionToggles = class {
+  constructor(file) {
+    this.file = file;
+    this.disabled = [];
+    if (file === void 0) return;
+    try {
+      const parsed = JSON.parse(readFileSync3(file, "utf8"));
+      if (Array.isArray(parsed.disabled)) {
+        for (const id of parsed.disabled) if (typeof id === "string") this.disabled.push(id);
+      }
+    } catch {
+    }
+  }
+  file;
+  disabled;
+  /** True unless the session was switched off. */
+  isEnabled(sessionId) {
+    return sessionId === void 0 || !this.disabled.includes(sessionId);
+  }
+  /** Switch one session on/off; returns the new enabled value. */
+  set(sessionId, enabled) {
+    const index = this.disabled.indexOf(sessionId);
+    if (enabled && index !== -1) this.disabled.splice(index, 1);
+    if (!enabled && index === -1) {
+      this.disabled.push(sessionId);
+      while (this.disabled.length > MAX_REMEMBERED_SESSIONS) this.disabled.shift();
+    }
+    this.save();
+    return enabled;
+  }
+  save() {
+    if (this.file === void 0) return;
+    try {
+      mkdirSync(dirname(this.file), { recursive: true });
+      writeFileSync(this.file, JSON.stringify({ disabled: this.disabled }, null, 2), "utf8");
+    } catch {
+    }
+  }
+};
+
+// src/chip.ts
+function baseName(path) {
+  const parts = path.split(/[\\/]/).filter((part) => part.length > 0);
+  return parts.length === 0 ? path : parts[parts.length - 1] ?? path;
+}
+function hasSelection(snapshot) {
+  const selection = snapshot?.selection;
+  return selection !== void 0 && selection.text.length > 0;
+}
+function selectedLineCount(start, end) {
+  const count = end.line - start.line + 1;
+  return end.character === 0 && end.line > start.line ? count - 1 : count;
+}
+function computeChipState(input) {
+  const { enabled, bridge, snapshot, previousState } = input;
+  const ideName = bridge.ideName ?? snapshot?.ideName;
+  const base = { enabled, status: "disconnected", ...ideName !== void 0 ? { ideName } : {} };
+  if (!bridge.lockFound || !bridge.connected) return base;
+  const state = snapshot === void 0 ? "" : renderState(snapshot);
+  const pending = state.length > 0 && state !== previousState;
+  if (!hasSelection(snapshot)) return { ...base, status: "no-selection", pending };
+  const { selection } = snapshot;
+  const lineCount = selectedLineCount(selection.start, selection.end);
+  const startLine = selection.start.line + 1;
+  const endLine = startLine + lineCount - 1;
+  const range = startLine === endLine ? `${startLine}` : `${startLine}-${endLine}`;
+  return {
+    ...base,
+    status: "selection",
+    filePath: selection.filePath,
+    label: `${baseName(selection.filePath)}:${range}`,
+    startLine,
+    endLine,
+    lineCount,
+    chars: selection.text.length,
+    truncated: selection.text.length > MAX_SELECTION_TEXT_CHARS,
+    pending
+  };
+}
+
+// src/web.ts
+var ROUTE_PREFIX = "/ide-context/api";
+var CLIENT_HEADER = "x-dsh-ide-context";
+var LOOPBACK = /* @__PURE__ */ new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+function isAllowedRequest(req) {
+  const host = req.headers.host;
+  if (typeof host !== "string") return false;
+  let hostname;
+  try {
+    hostname = new URL(`http://${host}`).hostname;
+  } catch {
+    return false;
+  }
+  if (!LOOPBACK.has(hostname)) return false;
+  if (req.headers["sec-fetch-site"] === "cross-site") return false;
+  return req.headers[CLIENT_HEADER] === "1";
+}
+function stateFor(deps, sessionId) {
+  const session = sessionId === void 0 ? void 0 : safeGet(deps, sessionId);
+  const cwd = session?.header.cwd;
+  if (cwd !== void 0) deps.bridge.followWorkspace(cwd);
+  return computeChipState({
+    enabled: deps.toggles.isEnabled(sessionId),
+    bridge: deps.bridge.status(),
+    snapshot: deps.bridge.latest(),
+    previousState: session === void 0 ? void 0 : safePrevious(deps, session)
+  });
+}
+function safeGet(deps, id) {
+  try {
+    return deps.getSession(id);
+  } catch {
+    return void 0;
+  }
+}
+function safePrevious(deps, session) {
+  try {
+    return deps.previousState(session);
+  } catch {
+    return void 0;
+  }
+}
+function send(res, status, body) {
+  res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
+  res.end(JSON.stringify(body));
+}
+async function readBody(req, limit = 4096) {
+  let size = 0;
+  const chunks = [];
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > limit) throw new Error("body too large");
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+function createHandler(deps) {
+  return async (req, res) => {
+    try {
+      if (!isAllowedRequest(req)) return send(res, 403, { ok: false, error: "forbidden" });
+      const url = new URL(req.url ?? "/", "http://local");
+      const method = url.pathname.slice(ROUTE_PREFIX.length);
+      if (req.method === "GET" && method === "/state") {
+        const session = url.searchParams.get("session") ?? void 0;
+        return send(res, 200, { ok: true, value: stateFor(deps, session === "" ? void 0 : session) });
+      }
+      if (req.method === "POST" && method === "/toggle") {
+        const parsed = JSON.parse(await readBody(req));
+        if (typeof parsed.session !== "string" || parsed.session.length === 0 || typeof parsed.enabled !== "boolean") {
+          return send(res, 400, { ok: false, error: "expected { session: string, enabled: boolean }" });
+        }
+        deps.toggles.set(parsed.session, parsed.enabled);
+        return send(res, 200, { ok: true, value: stateFor(deps, parsed.session) });
+      }
+      return send(res, 404, { ok: false, error: "not found" });
+    } catch (error) {
+      return send(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+  };
+}
+
 // src/index.ts
 function latestInjectedState(agent) {
-  for (const event of [...agent.session.snapshotEvents()].reverse()) {
+  return latestInjectedStateOf(agent.session);
+}
+function latestInjectedStateOf(session) {
+  const events = session.snapshotEvents?.() ?? [];
+  for (const event of [...events].reverse()) {
     if (event.type === "user/message" && event.data.source.kind === name) {
       const [block] = event.data.content;
       if (block?.type !== "text") return void 0;
@@ -791,6 +979,7 @@ function apply(ctx, config) {
   const refreshIntervalMs = config.refreshIntervalMs;
   const pollIntervalMs = config.pollIntervalMs ?? 5e3;
   const lockDir = config.lockDir ?? DEFAULT_LOCK_DIR;
+  const toggles = new SessionToggles(join3(homedir2(), ".dsh", "ide-context", "sessions.json"));
   validatePositiveInteger(refreshIntervalMs, "refreshIntervalMs");
   validatePositiveInteger(pollIntervalMs, "pollIntervalMs");
   const bridge = ctx.get("ideContext") ?? new IdeBridge(lockDir, pollIntervalMs, ctx.logger);
@@ -806,6 +995,7 @@ function apply(ctx, config) {
   ctx.on("agent/pre-step", async ({ agent, turn, step, signal }, next) => {
     const decision = await next();
     if (decision.kind === "reject" || signal.aborted || step !== 1) return decision;
+    if (!toggles.isEnabled(agent.session.id)) return decision;
     bridge.followWorkspace(agent.session.header.cwd);
     const previous = latestInjectedState(agent);
     if (refreshIntervalMs !== void 0 && refreshIntervalMs > 0 && previous !== void 0) {
@@ -829,18 +1019,39 @@ function apply(ctx, config) {
       ]
     };
   }, { prepend: true });
+  ctx.inject(["webServer"], (webCtx) => {
+    const handler = createHandler({
+      bridge,
+      toggles,
+      getSession: (id) => {
+        const sessions = ctx.get("sessions");
+        return sessions?.get(id);
+      },
+      previousState: (session) => latestInjectedStateOf(session)?.state
+    });
+    webCtx.effect(() => webCtx.webServer.register({ kind: "prefix", path: ROUTE_PREFIX, handler }), `${name} chip route`);
+  });
 }
 export {
+  CLIENT_HEADER,
   Config,
   IdeBridge,
+  ROUTE_PREFIX,
+  SessionToggles,
   apply,
+  baseName,
+  computeChipState,
+  createHandler,
   extractOpenedFiles,
   extractSelectionToolResult,
   filterFilesUnderRoots,
   inject,
+  isAllowedRequest,
   name,
   renderState,
   scanLatestLock,
   scanLocks,
-  selectLockByWorkspace
+  selectLockByWorkspace,
+  selectedLineCount,
+  stateFor
 };

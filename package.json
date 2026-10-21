@@ -7,22 +7,30 @@
   "exports": {
     ".": "./index.js",
     "./invariant": "./invariant.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./client": "./client/client.js"
   },
   "files": [
+    "client",
+    "cordis.patch.yml",
     "index.js",
-    "invariant.js",
-    "cordis.patch.yml"
+    "invariant.js"
   ],
   "scripts": {
     "build": "node build.mjs",
     "check:build": "node check-build.mjs",
-    "test": "node smoke-test.mjs"
+    "test": "node smoke-test.mjs && node --test tests/chip.test.mjs"
   },
   "license": "MIT",
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime"
+      ]
     }
   },
   "peerDependencies": {

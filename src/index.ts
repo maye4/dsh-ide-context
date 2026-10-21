@@ -16,6 +16,8 @@
  * @module @deepseek-ai/dsh-ide-context
  */
 
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
@@ -27,6 +29,8 @@ import {
 import { IdeBridge } from './bridge.js'
 import { renderReading, renderState } from './format.js'
 import { validatePositiveInteger, type Config, type IdeSnapshot } from './types.js'
+import { SessionToggles } from './toggles.js'
+import { createHandler, ROUTE_PREFIX, type SessionLike } from './web.js'
 
 // ---------------------------------------------------------------------------
 // Public API — the package surface is unchanged; implementation moves below.
@@ -51,6 +55,19 @@ export { extractOpenedFiles, extractSelectionToolResult } from './protocol.js'
 // Rendering.
 export { renderState } from './format.js'
 
+// Composer chip (pure state + per-session switch + route).
+export { computeChipState, baseName, selectedLineCount } from './chip.js'
+export type { ChipState, BridgeStatus } from './chip.js'
+export { SessionToggles } from './toggles.js'
+export { createHandler, isAllowedRequest, stateFor, ROUTE_PREFIX, CLIENT_HEADER } from './web.js'
+
+/** The slice of a durable session event this module reads. */
+interface SessionEventLike {
+  type: string
+  time: number
+  data: { source: { kind: string }; content: ReadonlyArray<{ type: string; text: string }> }
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** The active IDE bridge; provided by this plugin unless a test replaces it. */
@@ -65,7 +82,13 @@ declare module '@deepseek-ai/cordis' {
  * cache state.
  */
 function latestInjectedState(agent: Agent): { state: string; time: number } | undefined {
-  for (const event of [...agent.session.snapshotEvents()].reverse()) {
+  return latestInjectedStateOf(agent.session)
+}
+
+/** {@link latestInjectedState} for any session object exposing `snapshotEvents()`. */
+function latestInjectedStateOf(session: unknown): { state: string; time: number } | undefined {
+  const events = (session as { snapshotEvents?: () => readonly SessionEventLike[] }).snapshotEvents?.() ?? []
+  for (const event of [...events].reverse()) {
     if (event.type === 'user/message'
       && event.data.source.kind === name) {
       const [block] = event.data.content
@@ -98,6 +121,7 @@ export function apply(ctx: Context, config: Config): void {
   const refreshIntervalMs = config.refreshIntervalMs
   const pollIntervalMs = config.pollIntervalMs ?? 5_000
   const lockDir = config.lockDir ?? DEFAULT_LOCK_DIR
+  const toggles = new SessionToggles(join(homedir(), '.dsh', 'ide-context', 'sessions.json'))
   validatePositiveInteger(refreshIntervalMs, 'refreshIntervalMs')
   validatePositiveInteger(pollIntervalMs, 'pollIntervalMs')
 
@@ -116,6 +140,8 @@ export function apply(ctx: Context, config: Config): void {
   ): Promise<PreStepDecision> => {
     const decision = await next()
     if (decision.kind === 'reject' || signal.aborted || step !== 1) return decision
+    // Composer chip switched this session off: skip the reading entirely.
+    if (!toggles.isEnabled(agent.session.id)) return decision
     bridge.followWorkspace(agent.session.header.cwd)
     const previous = latestInjectedState(agent)
     if (refreshIntervalMs !== undefined && refreshIntervalMs > 0 && previous !== undefined) {
@@ -139,4 +165,22 @@ export function apply(ctx: Context, config: Config): void {
       ],
     }
   }, { prepend: true })
+
+  // Composer chip route. Optional: profiles without a web server (headless,
+  // tui) simply skip it.
+  ctx.inject(['webServer'], (webCtx) => {
+    const handler = createHandler({
+      bridge,
+      toggles,
+      getSession: (id) => {
+        const sessions = (ctx as unknown as { get(name: string): unknown }).get('sessions') as
+          { get(id: string): SessionLike | undefined } | undefined
+        return sessions?.get(id)
+      },
+      previousState: (session) => latestInjectedStateOf(session)?.state,
+    })
+    webCtx.effect(() => (webCtx as unknown as {
+      webServer: { register(route: { kind: 'prefix'; path: string; handler: typeof handler }): () => void }
+    }).webServer.register({ kind: 'prefix', path: ROUTE_PREFIX, handler }), `${name} chip route`)
+  })
 }
