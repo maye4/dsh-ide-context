@@ -65,10 +65,9 @@ declare module '@deepseek-ai/cordis' {
  * cache state.
  */
 function latestInjectedState(agent: Agent): { state: string; time: number } | undefined {
-  for (const event of [...agent.session.events].reverse()) {
+  for (const event of [...agent.session.snapshotEvents()].reverse()) {
     if (event.type === 'user/message'
-      && event.data.source.kind === 'plugin'
-      && event.data.source.plugin === name) {
+      && event.data.source.kind === name) {
       const [block] = event.data.content
       if (block?.type !== 'text') return undefined
       const newline = block.text.indexOf('\n')
@@ -134,7 +133,7 @@ export function apply(ctx: Context, config: Config): void {
       messages: [
         createUserMessage({
           content: [{ type: 'text', text }],
-          source: { kind: 'plugin', plugin: name, form: 'snapshot', sections: [{ name, text }] },
+          source: { kind: name, form: 'snapshot', sections: [{ name, text }] },
         }),
         ...decision.messages,
       ],

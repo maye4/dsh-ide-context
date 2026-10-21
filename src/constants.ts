@@ -39,4 +39,7 @@ export const READING_PREFIX = 'ide context (turn '
 export const OPENED_FILES_TOOLS = ['get_all_opened_file_paths', 'getOpenEditors'] as const
 
 /** Candidate tool names for the current selection, probed against tools/list. */
-export const SELECTION_TOOLS = ['getCurrentSelection', 'getLatestSelection'] as const
+export const SELECTION_TOOLS = ['getLatestSelection', 'getCurrentSelection'] as const
+
+/** Upper bound on selected text rendered into one reading; longer selections are truncated with a note. */
+export const MAX_SELECTION_TEXT_CHARS = 8_000

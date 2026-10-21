@@ -7,7 +7,7 @@
  * @module @deepseek-ai/dsh-ide-context/format (internal)
  */
 
-import { READING_PREFIX } from './constants.js'
+import { MAX_SELECTION_TEXT_CHARS, READING_PREFIX } from './constants.js'
 import type { IdeSelection, IdeSnapshot } from './types.js'
 
 /**
@@ -30,7 +30,12 @@ export const claudeSelectionStrategy: SelectionRenderStrategy = {
     const endLine = selection.end.line + 1
     const linesLabel = startLine === endLine ? `line ${startLine}` : `lines ${startLine} to ${endLine}`
     const lines: string[] = [`The user selected ${linesLabel} from ${selection.filePath}:`]
-    if (selection.text.length > 0) lines.push(selection.text)
+    if (selection.text.length > MAX_SELECTION_TEXT_CHARS) {
+      lines.push(selection.text.slice(0, MAX_SELECTION_TEXT_CHARS))
+      lines.push(`[selection truncated: showing ${MAX_SELECTION_TEXT_CHARS} of ${selection.text.length} characters; read the file for the rest]`)
+    } else if (selection.text.length > 0) {
+      lines.push(selection.text)
+    }
     lines.push('')
     lines.push('This may or may not be related to the current task.')
     return lines.join('\n')

@@ -14,7 +14,8 @@ var WS_SUBPROTOCOL = "mcp";
 var DATA_READY_TIMEOUT_MS = 1500;
 var READING_PREFIX = "ide context (turn ";
 var OPENED_FILES_TOOLS = ["get_all_opened_file_paths", "getOpenEditors"];
-var SELECTION_TOOLS = ["getCurrentSelection", "getLatestSelection"];
+var SELECTION_TOOLS = ["getLatestSelection", "getCurrentSelection"];
+var MAX_SELECTION_TEXT_CHARS = 8e3;
 
 // src/lock.ts
 import { readdirSync, readFileSync as readFileSync2, statSync } from "node:fs";
@@ -739,7 +740,12 @@ var claudeSelectionStrategy = {
     const endLine = selection.end.line + 1;
     const linesLabel = startLine === endLine ? `line ${startLine}` : `lines ${startLine} to ${endLine}`;
     const lines = [`The user selected ${linesLabel} from ${selection.filePath}:`];
-    if (selection.text.length > 0) lines.push(selection.text);
+    if (selection.text.length > MAX_SELECTION_TEXT_CHARS) {
+      lines.push(selection.text.slice(0, MAX_SELECTION_TEXT_CHARS));
+      lines.push(`[selection truncated: showing ${MAX_SELECTION_TEXT_CHARS} of ${selection.text.length} characters; read the file for the rest]`);
+    } else if (selection.text.length > 0) {
+      lines.push(selection.text);
+    }
     lines.push("");
     lines.push("This may or may not be related to the current task.");
     return lines.join("\n");
@@ -766,8 +772,8 @@ ${renderState(snapshot, strategy)}`;
 
 // src/index.ts
 function latestInjectedState(agent) {
-  for (const event of [...agent.session.events].reverse()) {
-    if (event.type === "user/message" && event.data.source.kind === "plugin" && event.data.source.plugin === name) {
+  for (const event of [...agent.session.snapshotEvents()].reverse()) {
+    if (event.type === "user/message" && event.data.source.kind === name) {
       const [block] = event.data.content;
       if (block?.type !== "text") return void 0;
       const newline = block.text.indexOf("\n");
@@ -817,7 +823,7 @@ function apply(ctx, config) {
       messages: [
         createUserMessage({
           content: [{ type: "text", text }],
-          source: { kind: "plugin", plugin: name, form: "snapshot", sections: [{ name, text }] }
+          source: { kind: name, form: "snapshot", sections: [{ name, text }] }
         }),
         ...decision.messages
       ]
