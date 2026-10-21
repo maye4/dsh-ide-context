@@ -46,7 +46,7 @@ export interface WebDeps {
   previousState(session: SessionLike): string | undefined
 }
 
-/** True for same-machine browser requests carrying the client header. */
+/** True for same-machine, same-origin requests carrying the client header. */
 export function isAllowedRequest(req: Pick<IncomingMessage, 'headers'>): boolean {
   const host = req.headers.host
   if (typeof host !== 'string') return false
@@ -57,7 +57,22 @@ export function isAllowedRequest(req: Pick<IncomingMessage, 'headers'>): boolean
     return false
   }
   if (!LOOPBACK.has(hostname)) return false
-  if (req.headers['sec-fetch-site'] === 'cross-site') return false
+  // Browsers mark every fetch: only the dsh web page itself (same-origin) or a
+  // direct navigation/tool (none / absent) may call; another localhost port is
+  // 'same-site' and is refused too.
+  const site = req.headers['sec-fetch-site']
+  if (site !== undefined && site !== 'same-origin' && site !== 'none') return false
+  // A browser-sent Origin must be this very host.
+  const origin = req.headers.origin
+  if (typeof origin === 'string' && origin !== 'null') {
+    try {
+      if (new URL(origin).host !== host) return false
+    } catch {
+      return false
+    }
+  } else if (origin === 'null') {
+    return false
+  }
   return req.headers[CLIENT_HEADER] === '1'
 }
 
@@ -136,10 +151,16 @@ export function openStream(
   const push = (follow: boolean): void => {
     if (closed) return
     lastPushAt = Date.now()
-    const json = JSON.stringify(stateFor(deps, sessionId, { follow }))
-    if (json === last) return
-    last = json
-    res.write(`data: ${json}\n\n`)
+    // Runs from timers and bridge callbacks: a throw here must never escape
+    // into the host process.
+    try {
+      const json = JSON.stringify(stateFor(deps, sessionId, { follow }))
+      if (json === last) return
+      last = json
+      res.write(`data: ${json}\n\n`)
+    } catch {
+      // Skip this frame; the next change or refollow tick retries.
+    }
   }
   // Leading-edge throttle: push at once, then at most one frame per window.
   const schedule = (): void => {
@@ -199,6 +220,10 @@ export function createHandler(deps: WebDeps) {
       }
       return send(res, 404, { ok: false, error: 'not found' })
     } catch (error) {
+      if (res.headersSent) {
+        try { res.end() } catch { /* already gone */ }
+        return
+      }
       return send(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) })
     }
   }

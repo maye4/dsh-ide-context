@@ -80,6 +80,10 @@ test('route guard: loopback host + client header, not cross-site', () => {
   assert.equal(isAllowedRequest({ headers: { ...ok, host: 'evil.example:3080' } }), false)
   assert.equal(isAllowedRequest({ headers: { host: '127.0.0.1:3080' } }), false)
   assert.equal(isAllowedRequest({ headers: { ...ok, 'sec-fetch-site': 'cross-site' } }), false)
+  assert.equal(isAllowedRequest({ headers: { ...ok, 'sec-fetch-site': 'same-site' } }), false, 'another localhost port')
+  assert.equal(isAllowedRequest({ headers: { ...ok, 'sec-fetch-site': 'same-origin', origin: `http://${ok.host}` } }), true)
+  assert.equal(isAllowedRequest({ headers: { ...ok, origin: 'http://localhost:5173' } }), false, 'foreign origin')
+  assert.equal(isAllowedRequest({ headers: { ...ok, origin: 'null' } }), false, 'opaque origin')
 })
 
 test('stateFor follows the session cwd and never opens its own connection', () => {
@@ -202,4 +206,21 @@ test('HTTP /events: streams frames over a real socket and releases everything on
   } finally {
     server.closeAllConnections?.(); server.close()
   }
+})
+
+test('openStream: a failing state read never throws out of the stream (timers / bridge callbacks)', async () => {
+  const bridge = fakeBridge(snap(sel('a', 0, 0)))
+  let fail = true
+  const deps = { bridge: { ...bridge, status: () => { if (fail) throw new Error('boom'); return bridge.status() } }, toggles: new SessionToggles(undefined), getSession: () => undefined, previousState: () => undefined }
+  const req = new EventEmitter(); const res = new EventEmitter(); const writes = []
+  Object.assign(res, { writeHead() {}, write: (c) => { writes.push(c); return true }, end() {} })
+  const dispose = openStream(deps, req, res, 's1')
+  assert.equal(frames(writes).length, 0)
+  assert.doesNotThrow(() => bridge.set(snap(sel('ab', 0, 1))))
+  fail = false
+  await sleep(PUSH_THROTTLE_MS + 5)
+  bridge.set(snap(sel('abc', 0, 2)))
+  assert.equal(frames(writes).length, 1, 'recovers on the next change')
+  dispose()
+  assert.equal(bridge.listeners.size, 0)
 })

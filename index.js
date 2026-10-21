@@ -508,7 +508,6 @@ var IdeBridge = class {
       this.readyWaiters.add(onData);
     });
   }
-  /** Wake any {@link awaitLatest} waiters once files/selection have arrived. */
   /**
    * Subscribe to snapshot / connection changes. Listeners are told *that*
    * something may have changed (they re-read {@link latest}/{@link status});
@@ -533,6 +532,7 @@ var IdeBridge = class {
       }
     }
   }
+  /** Tell change listeners, then wake any {@link awaitLatest} waiters once files/selection have arrived. */
   notifyData() {
     this.emitChange();
     const { snapshot } = this;
@@ -934,7 +934,18 @@ function isAllowedRequest(req) {
     return false;
   }
   if (!LOOPBACK.has(hostname)) return false;
-  if (req.headers["sec-fetch-site"] === "cross-site") return false;
+  const site = req.headers["sec-fetch-site"];
+  if (site !== void 0 && site !== "same-origin" && site !== "none") return false;
+  const origin = req.headers.origin;
+  if (typeof origin === "string" && origin !== "null") {
+    try {
+      if (new URL(origin).host !== host) return false;
+    } catch {
+      return false;
+    }
+  } else if (origin === "null") {
+    return false;
+  }
   return req.headers[CLIENT_HEADER] === "1";
 }
 function stateFor(deps, sessionId, options = {}) {
@@ -991,12 +1002,15 @@ function openStream(deps, req, res, sessionId, counter) {
   const push = (follow) => {
     if (closed) return;
     lastPushAt = Date.now();
-    const json = JSON.stringify(stateFor(deps, sessionId, { follow }));
-    if (json === last) return;
-    last = json;
-    res.write(`data: ${json}
+    try {
+      const json = JSON.stringify(stateFor(deps, sessionId, { follow }));
+      if (json === last) return;
+      last = json;
+      res.write(`data: ${json}
 
 `);
+    } catch {
+    }
   };
   const schedule = () => {
     if (closed || pending !== void 0) return;
@@ -1065,6 +1079,13 @@ function createHandler(deps) {
       }
       return send(res, 404, { ok: false, error: "not found" });
     } catch (error) {
+      if (res.headersSent) {
+        try {
+          res.end();
+        } catch {
+        }
+        return;
+      }
       return send(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
     }
   };

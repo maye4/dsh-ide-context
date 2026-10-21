@@ -128,7 +128,6 @@ export class IdeBridge {
     })
   }
 
-  /** Wake any {@link awaitLatest} waiters once files/selection have arrived. */
   /**
    * Subscribe to snapshot / connection changes. Listeners are told *that*
    * something may have changed (they re-read {@link latest}/{@link status});
@@ -151,6 +150,7 @@ export class IdeBridge {
     }
   }
 
+  /** Tell change listeners, then wake any {@link awaitLatest} waiters once files/selection have arrived. */
   private notifyData(): void {
     this.emitChange()
     const { snapshot } = this
