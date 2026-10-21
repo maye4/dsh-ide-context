@@ -1,5 +1,5 @@
 // dsh-ide-context client half (ModuleLoader format, hand-written ES5-ish JS,
-// no build step): a small chip at the left of the composer footer showing which
+// no build step): a small chip in the composer card's top padding showing which
 // IDE selection the next turn will carry, with a click to switch the IDE
 // reading off/on for this session. State is pushed by the host over a
 // server-sent-events stream read with fetch() (so the guard header applies),
@@ -96,17 +96,33 @@ window.__ModuleLoader__.load({ id: '@deepseek-ai/dsh-ide-context', factory: func
     }
   }
 
+  // The chip sits absolutely inside the composer card's existing top padding
+  // (rendered through the card's overlay slot), so it never adds a line, never
+  // changes the card's height and never touches the footer controls.
   var STYLE = {
-    base: {
-      display: 'inline-flex', alignItems: 'center', gap: '3px', maxWidth: '200px', height: '18px',
-      padding: '0 4px', borderRadius: '5px', border: '0.5px solid', fontSize: '11px', lineHeight: '17px',
-      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', cursor: 'pointer',
-      background: 'transparent', fontFamily: 'inherit', flexShrink: 1, minWidth: 0
+    wrap: {
+      position: 'absolute', top: '0px', left: '14px', right: '14px', height: '12px',
+      display: 'flex', alignItems: 'center', pointerEvents: 'none', minWidth: 0, zIndex: 1
     },
-    on: { borderColor: 'rgba(59,130,246,0.55)', color: 'rgb(37,99,235)', background: 'rgba(59,130,246,0.08)' },
-    sent: { borderColor: 'rgba(128,128,128,0.35)', color: 'inherit', opacity: 0.8 },
-    muted: { borderColor: 'rgba(128,128,128,0.3)', color: 'inherit', opacity: 0.55 },
-    off: { borderColor: 'rgba(220,38,38,0.45)', color: 'rgb(220,38,38)', opacity: 0.85 }
+    base: {
+      display: 'inline-flex', alignItems: 'center', gap: '3px', maxWidth: '100%', minWidth: 0, height: '12px',
+      padding: 0, margin: 0, border: 'none', borderRadius: '3px', background: 'transparent',
+      fontSize: '10px', lineHeight: '12px', fontFamily: 'inherit', whiteSpace: 'nowrap', overflow: 'hidden',
+      cursor: 'pointer', pointerEvents: 'auto', flex: '0 1 auto'
+    },
+    icon: { flex: 'none', width: '10px', height: '10px', display: 'block' },
+    text: { minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+    on: { color: 'rgb(37,99,235)' },
+    sent: { color: 'inherit', opacity: 0.6 },
+    muted: { color: 'inherit', opacity: 0.45 },
+    off: { color: 'rgb(220,38,38)', opacity: 0.85 }
+  }
+
+  // Small document icon (currentColor), like the file chips in Claude Code / vPi.
+  function FileIcon() {
+    return h('svg', { viewBox: '0 0 16 16', width: 10, height: 10, fill: 'none', stroke: 'currentColor', strokeWidth: 1.5,
+      strokeLinejoin: 'round', strokeLinecap: 'round', 'aria-hidden': true, focusable: 'false', style: STYLE.icon },
+      h('path', { d: 'M4 1.75h5.25L12.5 5v9.25H4z' }), h('path', { d: 'M9 1.75V5.25h3.5' }))
   }
 
   function IdeContextChip(props) {
@@ -159,18 +175,19 @@ window.__ModuleLoader__.load({ id: '@deepseek-ai/dsh-ide-context', factory: func
       if (!sessionId || !state) return
       postToggle(sessionId, !state.enabled).then(function (s) { if (s) setState(s) })
     }
-    return h('button', {
-      type: 'button', className: 'dsh-ide-context-chip', 'data-tone': v.tone, 'data-status': state.status,
-      title: v.title, 'aria-label': v.title, 'aria-pressed': state.enabled, onClick: onClick, style: style
-    }, h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis' } }, v.text))
+    return h('div', { className: 'dsh-ide-context-chip-row', style: STYLE.wrap },
+      h('button', {
+        type: 'button', className: 'dsh-ide-context-chip', 'data-tone': v.tone, 'data-status': state.status,
+        title: v.title, 'aria-label': v.title, 'aria-pressed': state.enabled, onClick: onClick, style: style
+      }, h(FileIcon), h('span', { className: 'dsh-ide-context-chip-text', style: STYLE.text }, v.text)))
   }
 
   function apply(ctx) {
-    ctx.slots.inject('conversation.input.left', function () {
+    ctx.slots.inject('conversation.input.overlay', function () {
       return ctx.slots.register({
-        name: 'conversation.input.left',
+        name: 'conversation.input.overlay',
         id: 'dsh-ide-context-chip',
-        order: 5,
+        order: 50,
         inject: function (sessionId) { return { sessionId: sessionId } }
       }, IdeContextChip)
     })

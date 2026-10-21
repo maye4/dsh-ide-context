@@ -97,7 +97,9 @@ The implementation is split into focused modules under `src/`:
 
 ## Composer chip (maye-fixes fork)
 
-The web client adds a small chip to the composer footer (`conversation.input.left` seat) showing what the
+The web client adds a small chip (file icon + text, 10px) at the top-left of the composer card, absolutely
+positioned in the card's existing top padding via the `conversation.input.overlay` seat, so it never changes the
+card height or the footer/model picker and ellipsizes when narrow. It shows what the
 next turn will carry, worded like Claude Code's indicator:
 
 | Chip | Meaning |
