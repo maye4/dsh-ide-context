@@ -113,3 +113,93 @@ test('client view model wording (Claude-style)', () => {
   assert.equal(mod.view({ ...base, startLine: 3, endLine: 3, lineCount: 1 }, true).text, '1 line selected')
   assert.equal(mod.view({ ...base, pending: false }, true).tone, 'sent')
 })
+
+// --- push channel ---------------------------------------------------------
+import http from 'node:http'
+import { EventEmitter } from 'node:events'
+import { openStream, createHandler, PUSH_THROTTLE_MS } from '../index.js'
+
+function fakeBridge(initial) {
+  const listeners = new Set()
+  let snapshot = initial
+  return {
+    listeners,
+    status: () => connected,
+    latest: () => snapshot,
+    followWorkspace: () => {},
+    onChange: (l) => { listeners.add(l); return () => listeners.delete(l) },
+    set(next) { snapshot = next; for (const l of [...listeners]) l() },
+  }
+}
+const frames = (writes) => writes.filter(w => w.startsWith('data: ')).map(w => JSON.parse(w.slice(6)))
+const sleep = (ms) => new Promise(r => setTimeout(r, ms))
+
+test('openStream: initial frame, immediate push, throttle, dedupe, toggle, full cleanup', async () => {
+  const bridge = fakeBridge(snap(sel('a', 0, 0)))
+  const toggles = new SessionToggles(undefined)
+  const deps = { bridge, toggles, getSession: () => ({ header: { cwd: '/w' } }), previousState: () => undefined }
+  const req = new EventEmitter(); const res = new EventEmitter(); const writes = []
+  Object.assign(res, { writeHead() {}, write: (c) => { writes.push(c); return true }, end() {} })
+  const counter = { open: 0 }
+  openStream(deps, req, res, 's1', counter)
+  assert.equal(counter.open, 1)
+  assert.equal(frames(writes).length, 1)
+  assert.equal(frames(writes)[0].lineCount, 1)
+  await sleep(PUSH_THROTTLE_MS + 5)
+  bridge.set(snap(sel('ab', 0, 1)))           // leading edge: immediate
+  assert.equal(frames(writes).length, 2)
+  bridge.set(snap(sel('abc', 0, 2)))          // inside window: deferred
+  bridge.set(snap(sel('abcd', 0, 3)))         // coalesced
+  assert.equal(frames(writes).length, 2)
+  await sleep(PUSH_THROTTLE_MS + 10)
+  assert.equal(frames(writes).length, 3)
+  assert.equal(frames(writes)[2].lineCount, 4)
+  await sleep(PUSH_THROTTLE_MS + 5)
+  bridge.set(snap(sel('abcd', 0, 3)))         // unchanged state: no frame
+  await sleep(PUSH_THROTTLE_MS + 10)
+  assert.equal(frames(writes).length, 3)
+  toggles.set('other', false)                 // other session: no frame
+  await sleep(PUSH_THROTTLE_MS + 10)
+  assert.equal(frames(writes).length, 3)
+  toggles.set('s1', false)
+  await sleep(PUSH_THROTTLE_MS + 10)
+  assert.equal(frames(writes).at(-1).enabled, false)
+  req.emit('close'); res.emit('close')
+  assert.equal(counter.open, 0)
+  assert.equal(bridge.listeners.size, 0)
+  const n = writes.length
+  bridge.set(snap(sel('zz', 5, 9))); toggles.set('s1', true)
+  await sleep(PUSH_THROTTLE_MS + 10)
+  assert.equal(writes.length, n)              // nothing after close
+})
+
+test('HTTP /events: streams frames over a real socket and releases everything on abort', async () => {
+  const bridge = fakeBridge(snap(sel('a', 2, 2)))
+  const handler = createHandler({ bridge, toggles: new SessionToggles(undefined), getSession: () => undefined, previousState: () => undefined })
+  const server = http.createServer((req, res) => { void handler(req, res) })
+  await new Promise(r => server.listen(0, '127.0.0.1', r))
+  const { port } = server.address()
+  try {
+    const forbidden = await fetch(`http://127.0.0.1:${port}/ide-context/api/events`)
+    assert.equal(forbidden.status, 403)
+    await forbidden.body?.cancel()
+    const ac = new AbortController()
+    const r = await fetch(`http://127.0.0.1:${port}/ide-context/api/events?session=s1`, { headers: { 'x-dsh-ide-context': '1' }, signal: ac.signal })
+    assert.equal(r.headers.get('content-type'), 'text/event-stream; charset=utf-8')
+    const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = ''
+    const next = async () => { for (;;) { const i = buf.indexOf('\n\n'); if (i !== -1) { const f = buf.slice(0, i); buf = buf.slice(i + 2); if (f.startsWith('data: ')) return JSON.parse(f.slice(6)) } const c = await reader.read(); buf += dec.decode(c.value, { stream: true }) } }
+    assert.equal((await next()).label, 'products-with-claude.md:3')
+    assert.equal(handler.streams.open, 1)
+    assert.equal(bridge.listeners.size, 1)
+    const t0 = performance.now(); bridge.set(snap(sel('abc', 2, 4)))
+    const pushed = await next()
+    assert.equal(pushed.lineCount, 3)
+    assert.ok(performance.now() - t0 < 40, 'server push should be immediate')
+    ac.abort()
+    for (let i = 0; i < 50 && handler.streams.open > 0; i++) await sleep(10)
+    assert.equal(handler.streams.open, 0)
+    assert.equal(bridge.listeners.size, 0)
+  } finally {
+    server.closeAllConnections?.(); server.close()
+  }
+})

@@ -59,7 +59,7 @@ export { renderState } from './format.js'
 export { computeChipState, baseName, selectedLineCount } from './chip.js'
 export type { ChipState, BridgeStatus } from './chip.js'
 export { SessionToggles } from './toggles.js'
-export { createHandler, isAllowedRequest, stateFor, ROUTE_PREFIX, CLIENT_HEADER } from './web.js'
+export { createHandler, openStream, isAllowedRequest, stateFor, ROUTE_PREFIX, CLIENT_HEADER, PUSH_THROTTLE_MS } from './web.js'
 
 /** The slice of a durable session event this module reads. */
 interface SessionEventLike {

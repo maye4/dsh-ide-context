@@ -450,6 +450,8 @@ var IdeBridge = class {
   disposed = false;
   /** Waiters blocking `awaitLatest` until substantive data (files/selection) arrives. */
   readyWaiters = /* @__PURE__ */ new Set();
+  /** Change listeners (composer-chip streams); called synchronously, must not throw. */
+  changeListeners = /* @__PURE__ */ new Set();
   // -------------------------------------------------------------------------
   // Snapshot reads
   // -------------------------------------------------------------------------
@@ -507,7 +509,32 @@ var IdeBridge = class {
     });
   }
   /** Wake any {@link awaitLatest} waiters once files/selection have arrived. */
+  /**
+   * Subscribe to snapshot / connection changes. Listeners are told *that*
+   * something may have changed (they re-read {@link latest}/{@link status});
+   * calls can be redundant, so consumers dedupe.
+   * @returns the disposer removing the listener.
+   */
+  onChange(listener) {
+    this.changeListeners.add(listener);
+    return () => {
+      this.changeListeners.delete(listener);
+    };
+  }
+  /** Number of live change listeners (diagnostics / leak tests). */
+  listenerCount() {
+    return this.changeListeners.size;
+  }
+  emitChange() {
+    for (const listener of [...this.changeListeners]) {
+      try {
+        listener();
+      } catch {
+      }
+    }
+  }
   notifyData() {
+    this.emitChange();
     const { snapshot } = this;
     if (snapshot.openedFiles.length === 0 && snapshot.selection === void 0) return;
     for (const waiter of this.readyWaiters) waiter();
@@ -574,6 +601,7 @@ var IdeBridge = class {
       openedFiles: []
     };
     if (lock !== void 0) this.connect(lock);
+    this.emitChange();
   }
   // -------------------------------------------------------------------------
   // Lifecycle
@@ -607,6 +635,7 @@ var IdeBridge = class {
     const ws = new RawWs(url, { "X-Claude-Code-Ide-Authorization": lock.authToken });
     this.ws = ws;
     ws.callbacks.onopen = () => {
+      this.emitChange();
       this.reconnectDelayMs = 500;
       this.logger.debug("ide-context: websocket connected");
       void this.rpc("initialize", {
@@ -626,6 +655,7 @@ var IdeBridge = class {
       this.handleMessage(raw);
     };
     ws.callbacks.onclose = (code, reason) => {
+      this.emitChange();
       this.logger.warn(`ide-context: connection closed (${code} ${reason}); will retry`);
       this.scheduleReconnect();
     };
@@ -808,9 +838,17 @@ var SessionToggles = class {
   }
   file;
   disabled;
+  listeners = /* @__PURE__ */ new Set();
   /** True unless the session was switched off. */
   isEnabled(sessionId) {
     return sessionId === void 0 || !this.disabled.includes(sessionId);
+  }
+  /** Subscribe to switch flips; returns the disposer. */
+  onChange(listener) {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
   }
   /** Switch one session on/off; returns the new enabled value. */
   set(sessionId, enabled) {
@@ -821,6 +859,12 @@ var SessionToggles = class {
       while (this.disabled.length > MAX_REMEMBERED_SESSIONS) this.disabled.shift();
     }
     this.save();
+    for (const listener of [...this.listeners]) {
+      try {
+        listener(sessionId);
+      } catch {
+      }
+    }
     return enabled;
   }
   save() {
@@ -876,6 +920,9 @@ function computeChipState(input) {
 // src/web.ts
 var ROUTE_PREFIX = "/ide-context/api";
 var CLIENT_HEADER = "x-dsh-ide-context";
+var PUSH_THROTTLE_MS = 50;
+var HEARTBEAT_MS = 2e4;
+var REFOLLOW_MS = 1e4;
 var LOOPBACK = /* @__PURE__ */ new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 function isAllowedRequest(req) {
   const host = req.headers.host;
@@ -890,10 +937,10 @@ function isAllowedRequest(req) {
   if (req.headers["sec-fetch-site"] === "cross-site") return false;
   return req.headers[CLIENT_HEADER] === "1";
 }
-function stateFor(deps, sessionId) {
+function stateFor(deps, sessionId, options = {}) {
   const session = sessionId === void 0 ? void 0 : safeGet(deps, sessionId);
   const cwd = session?.header.cwd;
-  if (cwd !== void 0) deps.bridge.followWorkspace(cwd);
+  if (cwd !== void 0 && options.follow !== false) deps.bridge.followWorkspace(cwd);
   return computeChipState({
     enabled: deps.toggles.isEnabled(sessionId),
     bridge: deps.bridge.status(),
@@ -929,12 +976,81 @@ async function readBody(req, limit = 4096) {
   }
   return Buffer.concat(chunks).toString("utf8");
 }
+function openStream(deps, req, res, sessionId, counter) {
+  res.writeHead(200, {
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-store, no-transform",
+    "x-accel-buffering": "no",
+    connection: "keep-alive"
+  });
+  res.flushHeaders?.();
+  let closed = false;
+  let last = "";
+  let lastPushAt = 0;
+  let pending;
+  const push = (follow) => {
+    if (closed) return;
+    lastPushAt = Date.now();
+    const json = JSON.stringify(stateFor(deps, sessionId, { follow }));
+    if (json === last) return;
+    last = json;
+    res.write(`data: ${json}
+
+`);
+  };
+  const schedule = () => {
+    if (closed || pending !== void 0) return;
+    const wait = PUSH_THROTTLE_MS - (Date.now() - lastPushAt);
+    if (wait <= 0) return push(false);
+    pending = setTimeout(() => {
+      pending = void 0;
+      push(false);
+    }, wait);
+  };
+  const offBridge = deps.bridge.onChange?.(schedule);
+  const offToggles = deps.toggles.onChange((id) => {
+    if (id === sessionId) schedule();
+  });
+  const heartbeat = setInterval(() => {
+    if (!closed) res.write(": hb\n\n");
+  }, HEARTBEAT_MS);
+  const refollow = setInterval(() => {
+    push(true);
+  }, REFOLLOW_MS);
+  if (counter !== void 0) counter.open++;
+  const dispose = () => {
+    if (closed) return;
+    closed = true;
+    if (counter !== void 0) counter.open--;
+    offBridge?.();
+    offToggles();
+    clearInterval(heartbeat);
+    clearInterval(refollow);
+    if (pending !== void 0) clearTimeout(pending);
+    try {
+      res.end();
+    } catch {
+    }
+  };
+  req.on("close", dispose);
+  res.on("close", dispose);
+  res.on("error", dispose);
+  push(true);
+  lastPushAt = 0;
+  return dispose;
+}
 function createHandler(deps) {
-  return async (req, res) => {
+  const streams = { open: 0 };
+  const handler = async (req, res) => {
     try {
       if (!isAllowedRequest(req)) return send(res, 403, { ok: false, error: "forbidden" });
       const url = new URL(req.url ?? "/", "http://local");
       const method = url.pathname.slice(ROUTE_PREFIX.length);
+      if (req.method === "GET" && method === "/events") {
+        const session = url.searchParams.get("session") ?? "";
+        openStream(deps, req, res, session === "" ? void 0 : session, streams);
+        return;
+      }
       if (req.method === "GET" && method === "/state") {
         const session = url.searchParams.get("session") ?? void 0;
         return send(res, 200, { ok: true, value: stateFor(deps, session === "" ? void 0 : session) });
@@ -952,6 +1068,7 @@ function createHandler(deps) {
       return send(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
     }
   };
+  return Object.assign(handler, { streams });
 }
 
 // src/index.ts
@@ -1036,6 +1153,7 @@ export {
   CLIENT_HEADER,
   Config,
   IdeBridge,
+  PUSH_THROTTLE_MS,
   ROUTE_PREFIX,
   SessionToggles,
   apply,
@@ -1048,6 +1166,7 @@ export {
   inject,
   isAllowedRequest,
   name,
+  openStream,
   renderState,
   scanLatestLock,
   scanLocks,

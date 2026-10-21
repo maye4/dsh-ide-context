@@ -13,6 +13,7 @@ export const MAX_REMEMBERED_SESSIONS = 500
 
 export class SessionToggles {
   private readonly disabled: string[]
+  private readonly listeners = new Set<(sessionId: string) => void>()
 
   constructor(private readonly file: string | undefined) {
     this.disabled = []
@@ -32,6 +33,12 @@ export class SessionToggles {
     return sessionId === undefined || !this.disabled.includes(sessionId)
   }
 
+  /** Subscribe to switch flips; returns the disposer. */
+  onChange(listener: (sessionId: string) => void): () => void {
+    this.listeners.add(listener)
+    return () => { this.listeners.delete(listener) }
+  }
+
   /** Switch one session on/off; returns the new enabled value. */
   set(sessionId: string, enabled: boolean): boolean {
     const index = this.disabled.indexOf(sessionId)
@@ -41,6 +48,9 @@ export class SessionToggles {
       while (this.disabled.length > MAX_REMEMBERED_SESSIONS) this.disabled.shift()
     }
     this.save()
+    for (const listener of [...this.listeners]) {
+      try { listener(sessionId) } catch { /* ignore */ }
+    }
     return enabled
   }
 

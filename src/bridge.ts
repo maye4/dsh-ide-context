@@ -55,6 +55,8 @@ export class IdeBridge {
   private disposed = false
   /** Waiters blocking `awaitLatest` until substantive data (files/selection) arrives. */
   private readonly readyWaiters = new Set<() => void>()
+  /** Change listeners (composer-chip streams); called synchronously, must not throw. */
+  private readonly changeListeners = new Set<() => void>()
 
   constructor(
     private readonly lockDir: string,
@@ -127,7 +129,30 @@ export class IdeBridge {
   }
 
   /** Wake any {@link awaitLatest} waiters once files/selection have arrived. */
+  /**
+   * Subscribe to snapshot / connection changes. Listeners are told *that*
+   * something may have changed (they re-read {@link latest}/{@link status});
+   * calls can be redundant, so consumers dedupe.
+   * @returns the disposer removing the listener.
+   */
+  onChange(listener: () => void): () => void {
+    this.changeListeners.add(listener)
+    return () => { this.changeListeners.delete(listener) }
+  }
+
+  /** Number of live change listeners (diagnostics / leak tests). */
+  listenerCount(): number {
+    return this.changeListeners.size
+  }
+
+  private emitChange(): void {
+    for (const listener of [...this.changeListeners]) {
+      try { listener() } catch { /* a broken stream must not break the bridge */ }
+    }
+  }
+
   private notifyData(): void {
+    this.emitChange()
     const { snapshot } = this
     if (snapshot.openedFiles.length === 0 && snapshot.selection === undefined) return
     for (const waiter of this.readyWaiters) waiter()
@@ -204,6 +229,7 @@ export class IdeBridge {
       openedFiles: [],
     }
     if (lock !== undefined) this.connect(lock)
+    this.emitChange()
   }
 
   // -------------------------------------------------------------------------
@@ -239,6 +265,7 @@ export class IdeBridge {
     const ws = new RawWs(url, { 'X-Claude-Code-Ide-Authorization': lock.authToken })
     this.ws = ws
     ws.callbacks.onopen = () => {
+      this.emitChange()
       this.reconnectDelayMs = 500
       this.logger.debug('ide-context: websocket connected')
       void this.rpc('initialize', {
@@ -255,6 +282,7 @@ export class IdeBridge {
     }
     ws.callbacks.onmessage = (raw) => { this.handleMessage(raw) }
     ws.callbacks.onclose = (code, reason) => {
+      this.emitChange()
       this.logger.warn(`ide-context: connection closed (${code} ${reason}); will retry`)
       this.scheduleReconnect()
     }

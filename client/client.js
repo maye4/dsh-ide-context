@@ -1,8 +1,10 @@
 // dsh-ide-context client half (ModuleLoader format, hand-written ES5-ish JS,
 // no build step): a small chip at the left of the composer footer showing which
 // IDE selection the next turn will carry, with a click to switch the IDE
-// reading off/on for this session. It polls the host route; the browser never
-// talks to the IDE, so the single server-side IDE connection is shared.
+// reading off/on for this session. State is pushed by the host over a
+// server-sent-events stream read with fetch() (so the guard header applies),
+// with a slow fallback poll and auto-reconnect. The browser never talks to the
+// IDE, so the single server-side IDE connection is shared.
 window.__ModuleLoader__.load({ id: '@deepseek-ai/dsh-ide-context', factory: function (require) {
   var module = { exports: {} }
   var exports = module.exports
@@ -10,7 +12,9 @@ window.__ModuleLoader__.load({ id: '@deepseek-ai/dsh-ide-context', factory: func
   var h = React.createElement
 
   var ROUTE = '/ide-context/api'
-  var POLL_MS = 1500
+  var FALLBACK_POLL_MS = 10000
+  var RECONNECT_MIN_MS = 500
+  var RECONNECT_MAX_MS = 10000
   var HEADERS = { 'x-dsh-ide-context': '1' }
 
   function fetchState(sessionId) {
@@ -18,6 +22,38 @@ window.__ModuleLoader__.load({ id: '@deepseek-ai/dsh-ide-context', factory: func
     return fetch(ROUTE + '/state' + q, { headers: HEADERS, credentials: 'same-origin', cache: 'no-store' })
       .then(function (r) { return r.json() })
       .then(function (body) { return body && body.ok ? body.value : null })
+  }
+
+  /**
+   * Read the SSE stream until it ends or `signal` aborts; calls onState for
+   * each `data:` frame. Resolves when the stream closes.
+   */
+  function readEvents(sessionId, signal, onState, onOpen) {
+    var q = sessionId ? '?session=' + encodeURIComponent(sessionId) : ''
+    return fetch(ROUTE + '/events' + q, { headers: HEADERS, credentials: 'same-origin', cache: 'no-store', signal: signal })
+      .then(function (r) {
+        if (!r.ok || !r.body) throw new Error('events ' + r.status)
+        onOpen()
+        var reader = r.body.getReader()
+        var decoder = new TextDecoder()
+        var buffer = ''
+        function pump() {
+          return reader.read().then(function (chunk) {
+            if (chunk.done) return
+            buffer += decoder.decode(chunk.value, { stream: true })
+            var cut
+            while ((cut = buffer.indexOf('\n\n')) !== -1) {
+              var frame = buffer.slice(0, cut)
+              buffer = buffer.slice(cut + 2)
+              var data = frame.split('\n').filter(function (l) { return l.indexOf('data:') === 0 })
+                .map(function (l) { return l.slice(5).trim() }).join('\n')
+              if (data) { try { onState(JSON.parse(data)) } catch (e) { /* ignore bad frame */ } }
+            }
+            return pump()
+          })
+        }
+        return pump()
+      })
   }
 
   function postToggle(sessionId, enabled) {
@@ -81,18 +117,38 @@ window.__ModuleLoader__.load({ id: '@deepseek-ai/dsh-ide-context', factory: func
 
     React.useEffect(function () {
       var alive = true
-      var timer = null
-      function tick() {
+      var controller = null
+      var retryTimer = null
+      var pollTimer = null
+      var delay = RECONNECT_MIN_MS
+      function set(s) { if (alive) setState(s) }
+      function connect() {
         if (!alive) return
-        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-          timer = setTimeout(tick, POLL_MS)
-          return
-        }
-        fetchState(sessionId).then(function (s) { if (alive) setState(s) }, function () { if (alive) setState(null) })
-          .then(function () { if (alive) timer = setTimeout(tick, POLL_MS) })
+        controller = new AbortController()
+        readEvents(sessionId, controller.signal, set, function () { delay = RECONNECT_MIN_MS })
+          .catch(function () { /* fall through to reconnect */ })
+          .then(function () {
+            if (!alive) return
+            retryTimer = setTimeout(connect, delay)
+            delay = Math.min(delay * 2, RECONNECT_MAX_MS)
+          })
       }
-      tick()
-      return function () { alive = false; if (timer) clearTimeout(timer) }
+      // Slow fallback: also re-follows the folder if the stream is wedged.
+      function poll() {
+        if (!alive) return
+        var hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden'
+        var done = function () { if (alive) pollTimer = setTimeout(poll, FALLBACK_POLL_MS) }
+        if (hidden) return done()
+        fetchState(sessionId).then(set, function () {}).then(done)
+      }
+      connect()
+      pollTimer = setTimeout(poll, FALLBACK_POLL_MS)
+      return function () {
+        alive = false
+        if (controller) controller.abort()
+        if (retryTimer) clearTimeout(retryTimer)
+        if (pollTimer) clearTimeout(pollTimer)
+      }
     }, [sessionId])
 
     var v = view(state, !!sessionId)

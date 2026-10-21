@@ -109,7 +109,12 @@ next turn will carry, worded like Claude Code's indicator:
 | `IDE context off` (red) | Switched off for this session; nothing is injected. Click to turn it back on. |
 
 Click the chip to switch IDE context off/on for the current session (stored in
-`~/.dsh/ide-context/sessions.json`). The browser polls `GET /ide-context/api/state?session=<id>` every 1.5 s;
-the route reads the plugin's single server-side IDE connection (it never opens a second one, since the
+`~/.dsh/ide-context/sessions.json`). Updates are pushed: the browser holds a Server-Sent Events stream
+`GET /ide-context/api/events?session=<id>` (read with `fetch()` so the same `x-dsh-ide-context: 1` header and
+loopback/same-site guard apply), and the server sends a frame as soon as the IDE reports `selection_changed`,
+the bridge connects or disconnects, or the toggle flips (throttled to at most one frame per 50 ms, identical
+frames dropped, `: hb` heartbeat every 20 s). The client reconnects with backoff (0.5 s to 10 s) and still polls
+`GET /ide-context/api/state` every 10 s as a fallback; each stream is torn down when its tab or composer
+unmounts. The route reads the plugin's single server-side IDE connection (it never opens a second one, since the
 Claude Code bridge allows one client per window). Line count follows Claude Code: a selection ending at
 column 0 of a line does not count that line. Selected text sent to the model is capped at 8000 characters.
