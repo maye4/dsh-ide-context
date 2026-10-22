@@ -2,7 +2,7 @@
  * Per-session "include IDE context" switch, persisted best-effort to a small
  * JSON file so a dsh restart keeps a session's choice. Only "off" sessions are
  * stored; the default is on.
- * @module @deepseek-ai/dsh-ide-context/toggles (internal)
+ * @module dsh-auto-context/toggles (internal)
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'

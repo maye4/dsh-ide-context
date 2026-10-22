@@ -4,7 +4,7 @@
  * the Claude Code IDE integration's MCP-over-WebSocket server uses. Isolated so
  * the transport can be swapped (or a `ws`-backed implementation substituted)
  * without touching the bridge or protocol layers.
- * @module @deepseek-ai/dsh-ide-context/ws (internal)
+ * @module dsh-auto-context/ws (internal)
  */
 
 import crypto from 'node:crypto'

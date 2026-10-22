@@ -2,7 +2,7 @@
  * Shared constants for the IDE-context plugin. Kept in one module so the
  * protocol, transport, discovery, and rendering layers reference a single
  * source of truth rather than re-declaring magic values.
- * @module @deepseek-ai/dsh-ide-context/constants (internal)
+ * @module dsh-auto-context/constants (internal)
  */
 
 import { homedir } from 'node:os'

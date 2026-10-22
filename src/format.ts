@@ -4,7 +4,7 @@
  * snapshot disclosure. Isolated behind a strategy so a future compact
  * `path#L45-49` locator format is an additive change here, not a rewrite of the
  * injection layer.
- * @module @deepseek-ai/dsh-ide-context/format (internal)
+ * @module dsh-auto-context/format (internal)
  */
 
 import { MAX_SELECTION_TEXT_CHARS, READING_PREFIX } from './constants.js'

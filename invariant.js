@@ -1,5 +1,5 @@
 // src/invariant.ts
-var PACKAGE_NAME = "@deepseek-ai/dsh-ide-context";
+var PACKAGE_NAME = "dsh-auto-context";
 var name = "ide-context-invariant";
 var inject = ["invariants"];
 var install = () => {

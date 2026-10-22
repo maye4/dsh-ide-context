@@ -2,7 +2,7 @@
  * Lock-file discovery and workspace selection. Reads the Claude Code CLI's
  * `<port>.lock` files, picks the candidate that belongs to the current working
  * directory, and filters file paths to the selected workspace roots.
- * @module @deepseek-ai/dsh-ide-context/lock (internal)
+ * @module dsh-auto-context/lock (internal)
  */
 
 import { readdirSync, readFileSync, statSync } from 'node:fs'

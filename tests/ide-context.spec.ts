@@ -6,9 +6,9 @@ import { Context } from '@deepseek-ai/cordis'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import AgentRegistry, { agentEvents, Inbox, type Agent } from '@deepseek-ai/dsh-agent'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import * as ideContext from '@deepseek-ai/dsh-ide-context'
-import type { IdeSnapshot } from '@deepseek-ai/dsh-ide-context'
-import { IdeBridge } from '@deepseek-ai/dsh-ide-context'
+import * as ideContext from 'dsh-auto-context'
+import type { IdeSnapshot } from 'dsh-auto-context'
+import { IdeBridge } from 'dsh-auto-context'
 
 const SIGNAL = new AbortController().signal
 

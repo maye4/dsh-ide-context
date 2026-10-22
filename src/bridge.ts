@@ -7,7 +7,7 @@
  * Composed from the transport ({@link RawWs}), discovery ({@link scanLocks},
  * {@link selectLockByWorkspace}), and protocol ({@link extractOpenedFiles},
  * {@link extractSelectionToolResult}) modules so each concern stays separate.
- * @module @deepseek-ai/dsh-ide-context/bridge (internal)
+ * @module dsh-auto-context/bridge (internal)
  */
 
 import type { LoggerService } from '@deepseek-ai/cordis'
@@ -271,7 +271,7 @@ export class IdeBridge {
       void this.rpc('initialize', {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: {},
-        clientInfo: { name: '@deepseek-ai/dsh-ide-context', version: '0.1.0' },
+        clientInfo: { name: 'dsh-auto-context', version: '0.1.0' },
       }).then((result) => {
         if (result !== undefined && typeof result === 'object'
           && (result as { error?: unknown }).error === undefined) {

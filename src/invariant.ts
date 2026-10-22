@@ -1,13 +1,13 @@
 /**
- * Package-owned invariant companion for `@deepseek-ai/dsh-ide-context`.
- * @module @deepseek-ai/dsh-ide-context/invariant
+ * Package-owned invariant companion for `dsh-auto-context`.
+ * @module dsh-auto-context/invariant
  */
 
 /* jscpd:ignore-start */
 import type { Context } from '@deepseek-ai/cordis'
 import type { InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 
-const PACKAGE_NAME = '@deepseek-ai/dsh-ide-context'
+const PACKAGE_NAME = 'dsh-auto-context'
 
 /** Cordis companion plugin name. */
 export const name = 'ide-context-invariant'

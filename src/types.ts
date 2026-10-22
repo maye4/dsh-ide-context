@@ -2,7 +2,7 @@
  * Public domain types for the IDE-context plugin: the IDE snapshot model, the
  * plugin configuration, and the parsed lock-file shape. Kept dependency-free so
  * embedders can import the model without pulling in the transport layers.
- * @module @deepseek-ai/dsh-ide-context/types (internal)
+ * @module dsh-auto-context/types (internal)
  */
 
 import z from '@deepseek-ai/schemastery'

@@ -3,7 +3,7 @@
  * the two return payloads (JSON `getOpenEditors` tabs vs. newline lists, and
  * `getCurrentSelection`/`getLatestSelection` vs. `selection_changed` pushes)
  * so the bridge and renderers stay dialect-agnostic.
- * @module @deepseek-ai/dsh-ide-context/protocol (internal)
+ * @module dsh-auto-context/protocol (internal)
  */
 
 import type { IdeSelection } from './types.js'

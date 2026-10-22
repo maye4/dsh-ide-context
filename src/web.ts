@@ -7,7 +7,7 @@
  * - `POST /ide-context/api/toggle` with `{ session, enabled }`.
  * All read the single server-side IDE bridge; the browser never talks to the
  * IDE. The browser reads the stream with fetch() so the guard header applies.
- * @module @deepseek-ai/dsh-ide-context/web (internal)
+ * @module dsh-auto-context/web (internal)
  */
 
 import type { IncomingMessage, ServerResponse } from 'node:http'

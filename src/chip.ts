@@ -1,7 +1,7 @@
 /**
  * Composer-chip state: a pure projection of what the next eligible turn would
  * inject, shared by the web route and the tests. No I/O here.
- * @module @deepseek-ai/dsh-ide-context/chip (internal)
+ * @module dsh-auto-context/chip (internal)
  */
 
 import { MAX_SELECTION_TEXT_CHARS } from './constants.js'

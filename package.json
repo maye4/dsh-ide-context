@@ -1,5 +1,5 @@
 {
-  "name": "@deepseek-ai/dsh-ide-context",
+  "name": "dsh-auto-context",
   "version": "0.1.0",
   "description": "DeepSeek Harness bundle: inject the user's IDE context (open editors + current selection) into each turn, via the Claude Code IDE WebSocket bridge (IntelliJ IDEA & VS Code).",
   "type": "module",

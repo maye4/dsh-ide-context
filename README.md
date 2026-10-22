@@ -1,4 +1,6 @@
-# dsh-ide-context
+# dsh-auto-context
+
+> Fork of [LSAI2023/dsh-ide-context](https://github.com/LSAI2023/dsh-ide-context), renamed to the unscoped package `dsh-auto-context` (the `@deepseek-ai` scope belongs to DeepSeek). The plugin id `ide-context`, the `/ide-context/api/*` routes, the `x-dsh-ide-context` header and the `~/.dsh/ide-context/` data directory are unchanged, so it stays merge-compatible with upstream.
 
 English | [中文](README.zh.md)
 
@@ -9,7 +11,7 @@ It reads the **Claude Code IDE integration** bridge — the same `~/.claude/ide/
 ## Install
 
 ```sh
-dsh plugin add github:LSAI2023/dsh-ide-context
+dsh plugin add github:maye4/dsh-auto-context
 ```
 
 Then boot a profile that lists this bundle:
@@ -92,7 +94,7 @@ The implementation is split into focused modules under `src/`:
 - `src/protocol.ts` — MCP tool-result parsing.
 - `src/bridge.ts` — connection lifecycle + snapshot maintenance (`IdeBridge`).
 - `src/format.ts` — snapshot rendering behind a `SelectionRenderStrategy`.
-- `src/invariant.ts` — the package-owned invariant companion (registered as `@deepseek-ai/dsh-ide-context/invariant`).
+- `src/invariant.ts` — the package-owned invariant companion (registered as `dsh-auto-context/invariant`).
 - `tests/ide-context.spec.ts` — unit tests ported from the DeepSeek Harness repository's `packages/context/ide-context/`.
 
 ## Composer chip (maye-fixes fork)

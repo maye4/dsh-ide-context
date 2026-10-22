@@ -641,7 +641,7 @@ var IdeBridge = class {
       void this.rpc("initialize", {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: {},
-        clientInfo: { name: "@deepseek-ai/dsh-ide-context", version: "0.1.0" }
+        clientInfo: { name: "dsh-auto-context", version: "0.1.0" }
       }).then((result) => {
         if (result !== void 0 && typeof result === "object" && result.error === void 0) {
           this.ws?.send(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }));

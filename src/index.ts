@@ -13,7 +13,7 @@
  * - {@link ./bridge.js}    connection lifecycle + snapshot maintenance
  * - {@link ./format.js}    snapshot rendering (pluggable selection strategy)
  *
- * @module @deepseek-ai/dsh-ide-context
+ * @module dsh-auto-context
  */
 
 import { homedir } from 'node:os'

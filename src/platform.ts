@@ -10,7 +10,7 @@
  * aligned with the IDE integration it speaks to. Windows (`win32`) is
  * implemented here; WSL (Linux host + Windows IDE) path conversion is a
  * separate future concern behind the same seam.
- * @module @deepseek-ai/dsh-ide-context/platform (internal)
+ * @module dsh-auto-context/platform (internal)
  */
 
 import { readFileSync } from 'node:fs'

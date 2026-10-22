@@ -1,4 +1,6 @@
-# dsh-ide-context
+# dsh-auto-context
+
+> 本仓库是 [LSAI2023/dsh-ide-context](https://github.com/LSAI2023/dsh-ide-context) 的 fork，包名改为不带 scope 的 `dsh-auto-context`（`@deepseek-ai` scope 属于 DeepSeek）。插件 id `ide-context`、`/ide-context/api/*` 路由、`x-dsh-ide-context` 请求头和 `~/.dsh/ide-context/` 数据目录保持不变，便于与上游合并。
 
 [English](README.md) | 中文
 
@@ -9,7 +11,7 @@
 ## 安装
 
 ```sh
-dsh plugin add github:LSAI2023/dsh-ide-context
+dsh plugin add github:maye4/dsh-auto-context
 ```
 
 然后启动一个列出了该 bundle 的 profile：
@@ -92,5 +94,5 @@ npm test            # 针对本地假 IDE 桥的实时 MCP-over-WebSocket 冒烟
 - `src/protocol.ts` —— MCP 工具结果解析。
 - `src/bridge.ts` —— 连接生命周期 + 快照维护（`IdeBridge`）。
 - `src/format.ts` —— 快照渲染，置于 `SelectionRenderStrategy` 之后。
-- `src/invariant.ts` —— 包自有的 invariant 伴生插件（以 `@deepseek-ai/dsh-ide-context/invariant` 注册）。
+- `src/invariant.ts` —— 包自有的 invariant 伴生插件（以 `dsh-auto-context/invariant` 注册）。
 - `tests/ide-context.spec.ts` —— 从 DeepSeek Harness 仓库 `packages/context/ide-context/` 移植的单元测试。

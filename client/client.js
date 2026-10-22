@@ -1,11 +1,11 @@
-// dsh-ide-context client half (ModuleLoader format, hand-written ES5-ish JS,
+// dsh-auto-context client half (ModuleLoader format, hand-written ES5-ish JS,
 // no build step): a small chip in the composer card's top padding showing which
 // IDE selection the next turn will carry, with a click to switch the IDE
 // reading off/on for this session. State is pushed by the host over a
 // server-sent-events stream read with fetch() (so the guard header applies),
 // with a slow fallback poll and auto-reconnect. The browser never talks to the
 // IDE, so the single server-side IDE connection is shared.
-window.__ModuleLoader__.load({ id: '@deepseek-ai/dsh-ide-context', factory: function (require) {
+window.__ModuleLoader__.load({ id: 'dsh-auto-context', factory: function (require) {
   var module = { exports: {} }
   var exports = module.exports
   var React = require('react')
